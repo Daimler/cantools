@@ -16,12 +16,12 @@ LOGGER = logging.getLogger(__name__)
 
 class SystemLoader(object):
     def __init__(self, root, strict):
-        self.root = root
-        self.strict = strict
+        self._root = root
+        self._strict = strict
 
-        m = re.match("^\\{(.*)\\}AUTOSAR$", self.root.tag)
+        m = re.match("^\\{(.*)\\}AUTOSAR$", self._root.tag)
         if not m:
-            raise ValueError(f"No XML namespace specified or illegal root tag name '{self.root.tag}'")
+            raise ValueError(f"No XML namespace specified or illegal root tag name '{self._root.tag}'")
 
         xml_namespace = m.group(1)
         self.xml_namespace = xml_namespace
@@ -93,26 +93,26 @@ class SystemLoader(object):
         # sub-packages are not treated yet.  This might or might not
         # be necessary.
         can_frame_triggerings = \
-            self.find_arxml_children(self.root,
-                                     [ "AR-PACKAGES",
-                                       "*AR-PACKAGE",
-                                       "ELEMENTS",
-                                       "*&CAN-CLUSTER",
-                                       "CAN-CLUSTER-VARIANTS",
-                                       "*&CAN-CLUSTER-CONDITIONAL",
-                                       "PHYSICAL-CHANNELS",
-                                       "*&CAN-PHYSICAL-CHANNEL",
-                                       "FRAME-TRIGGERINGS",
-                                       "*&CAN-FRAME-TRIGGERING" ])
+            self._find_arxml_children(self._root,
+                                      [ "AR-PACKAGES",
+                                        "*AR-PACKAGE",
+                                        "ELEMENTS",
+                                        "*&CAN-CLUSTER",
+                                        "CAN-CLUSTER-VARIANTS",
+                                        "*&CAN-CLUSTER-CONDITIONAL",
+                                        "PHYSICAL-CHANNELS",
+                                        "*&CAN-PHYSICAL-CHANNEL",
+                                        "FRAME-TRIGGERINGS",
+                                        "*&CAN-FRAME-TRIGGERING" ])
         for can_frame_triggering in can_frame_triggerings:
-            messages.append(self.load_message(can_frame_triggering))
+            messages.append(self._load_message(can_frame_triggering))
 
         return InternalDatabase(messages,
                                 [],
                                 buses,
                                 version)
 
-    def load_message(self, can_frame_triggering):
+    def _load_message(self, can_frame_triggering):
         """Load given message and return a message object.
 
         """
@@ -121,15 +121,15 @@ class SystemLoader(object):
         cycle_time = None
         senders = []
 
-        can_frame = self.find_unique_arxml_child(can_frame_triggering, "&FRAME")
+        can_frame = self._find_unique_arxml_child(can_frame_triggering, "&FRAME")
 
         # Name, frame id, length, is_extended_frame and comment.
-        name = self.find_unique_arxml_child(can_frame, "SHORT-NAME").text
-        frame_id = int(self.find_unique_arxml_child(can_frame_triggering, "IDENTIFIER").text)
-        length = int(self.find_unique_arxml_child(can_frame, "FRAME-LENGTH").text)
-        is_extended_frame = self.find_unique_arxml_child(can_frame_triggering, "CAN-ADDRESSING-MODE")
+        name = self._find_unique_arxml_child(can_frame, "SHORT-NAME").text
+        frame_id = int(self._find_unique_arxml_child(can_frame_triggering, "IDENTIFIER").text)
+        length = int(self._find_unique_arxml_child(can_frame, "FRAME-LENGTH").text)
+        is_extended_frame = self._find_unique_arxml_child(can_frame_triggering, "CAN-ADDRESSING-MODE")
         is_extended_frame = False if is_extended_frame is None else is_extended_frame.text == "EXTENDED"
-        comment = self.load_message_comment(can_frame)
+        comment = self._load_message_comment(can_frame)
 
         # ToDo: senders
 
@@ -139,33 +139,31 @@ class SystemLoader(object):
         # For "sane" bus systems like CAN or LIN, there ought to be
         # only a single PDU per frame. AUTOSAR also supports "insane"
         # bus systems like flexray, though...
-        pdu = self.find_unique_arxml_child(can_frame,
-                                          [
-                                              "PDU-TO-FRAME-MAPPINGS",
+        pdu = self._find_unique_arxml_child(can_frame,
+                                            [ "PDU-TO-FRAME-MAPPINGS",
                                               "&PDU-TO-FRAME-MAPPING",
-                                              "&PDU"
-                                          ])
+                                              "&PDU" ])
 
         if pdu is not None:
-            time_period = self.find_unique_arxml_child(pdu,
-                                                      [ "I-PDU-TIMING-SPECIFICATIONS",
-                                                        "I-PDU-TIMING",
-                                                        "TRANSMISSION-MODE-DECLARATION",
-                                                        "TRANSMISSION-MODE-TRUE-TIMING",
-                                                        "CYCLIC-TIMING",
-                                                        "TIME-PERIOD",
-                                                        "VALUE" ])
+            time_period = self._find_unique_arxml_child(pdu,
+                                                        [ "I-PDU-TIMING-SPECIFICATIONS",
+                                                          "I-PDU-TIMING",
+                                                          "TRANSMISSION-MODE-DECLARATION",
+                                                          "TRANSMISSION-MODE-TRUE-TIMING",
+                                                          "CYCLIC-TIMING",
+                                                          "TIME-PERIOD",
+                                                          "VALUE" ])
 
             if time_period is not None:
                 cycle_time = int(float(time_period.text) * 1000)
 
             i_signal_to_i_pdu_mappings = \
-                self.find_arxml_children(pdu,
-                                         [ "I-SIGNAL-TO-PDU-MAPPINGS",
-                                           "*&I-SIGNAL-TO-I-PDU-MAPPING" ])
+                self._find_arxml_children(pdu,
+                                          [ "I-SIGNAL-TO-PDU-MAPPINGS",
+                                            "*&I-SIGNAL-TO-I-PDU-MAPPING" ])
 
             for i_signal_to_i_pdu_mapping in i_signal_to_i_pdu_mappings:
-                signal = self.load_signal(i_signal_to_i_pdu_mapping)
+                signal = self._load_signal(i_signal_to_i_pdu_mapping)
 
                 if signal is not None:
                     signals.append(signal)
@@ -180,19 +178,19 @@ class SystemLoader(object):
                        signals=signals,
                        comment=comment,
                        bus_name=None,
-                       strict=self.strict)
+                       strict=self._strict)
 
-    def load_message_comment(self, can_frame):
+    def _load_message_comment(self, can_frame):
         # This extracts a single language. Support for multi languages
         # will be implemented in the near future.
-        l_2 = self.find_unique_arxml_child(can_frame, ["DESC", "L-2"])
+        l_2 = self._find_unique_arxml_child(can_frame, ["DESC", "L-2"])
 
         if l_2 is not None:
             return l_2.text
         else:
             return None
 
-    def load_signal(self, i_signal_to_i_pdu_mapping):
+    def _load_signal(self, i_signal_to_i_pdu_mapping):
         """Load given signal and return a signal object.
 
         """
@@ -208,29 +206,29 @@ class SystemLoader(object):
         receivers = []
         decimal = SignalDecimal(Decimal(factor), Decimal(offset))
 
-        i_signal = self.find_unique_arxml_child(i_signal_to_i_pdu_mapping, "&I-SIGNAL")
+        i_signal = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "&I-SIGNAL")
         if i_signal is None:
             # Probably a signal group (I-SIGNAL-GROUP).
             return None
 
         # Name, start position, length and byte order.
-        name = self.find_unique_arxml_child(i_signal, "SHORT-NAME").text
-        start_position = int(self.find_unique_arxml_child(i_signal_to_i_pdu_mapping, "START-POSITION").text)
-        length = int(self.find_unique_arxml_child(i_signal, "LENGTH").text)
-        byte_order = self.load_signal_byte_order(i_signal_to_i_pdu_mapping)
+        name = self._find_unique_arxml_child(i_signal, "SHORT-NAME").text
+        start_position = int(self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "START-POSITION").text)
+        length = int(self._find_unique_arxml_child(i_signal, "LENGTH").text)
+        byte_order = self._load_signal_byte_order(i_signal_to_i_pdu_mapping)
 
-        system_signal = self.find_unique_arxml_child(i_signal, "&SYSTEM-SIGNAL")
+        system_signal = self._find_unique_arxml_child(i_signal, "&SYSTEM-SIGNAL")
         if system_signal is not None:
             # Unit and comment.
-            unit = self.load_signal_unit(system_signal)
-            comment = self.load_signal_comment(system_signal)
+            unit = self._load_signal_unit(system_signal)
+            comment = self._load_signal_comment(system_signal)
 
             # Minimum, maximum, factor, offset and choices.
             minimum, maximum, factor, offset, choices = \
-                self.load_system_signal(system_signal, decimal)
+                self._load_system_signal(system_signal, decimal)
 
         # Type.
-        is_signed, is_float = self.load_signal_type(i_signal)
+        is_signed, is_float = self._load_signal_type(i_signal)
 
         # ToDo: receivers
 
@@ -250,81 +248,81 @@ class SystemLoader(object):
                       is_float=is_float,
                       decimal=decimal)
 
-    def load_signal_byte_order(self, i_signal_to_i_pdu_mapping):
-        packing_byte_order = self.find_unique_arxml_child(i_signal_to_i_pdu_mapping, "PACKING-BYTE-ORDER")
+    def _load_signal_byte_order(self, i_signal_to_i_pdu_mapping):
+        packing_byte_order = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "PACKING-BYTE-ORDER")
 
         if packing_byte_order is not None and packing_byte_order.text == 'MOST-SIGNIFICANT-BYTE-FIRST':
             return 'big_endian'
         else:
             return 'little_endian'
 
-    def load_signal_unit(self, system_signal):
-        result = self.find_unique_arxml_child(system_signal,
-                                              [ "PHYSICAL-PROPS",
-                                                "SW-DATA-DEF-PROPS-VARIANTS",
-                                                "&SW-DATA-DEF-PROPS-CONDITIONAL",
-                                                "&UNIT",
-                                                "DISPLAY-NAME"])
+    def _load_signal_unit(self, system_signal):
+        result = self._find_unique_arxml_child(system_signal,
+                                               [ "PHYSICAL-PROPS",
+                                                 "SW-DATA-DEF-PROPS-VARIANTS",
+                                                 "&SW-DATA-DEF-PROPS-CONDITIONAL",
+                                                 "&UNIT",
+                                                 "DISPLAY-NAME"])
 
         return result if result is None else result.text
 
-    def load_signal_comment(self, system_signal):
+    def _load_signal_comment(self, system_signal):
         # This extracts a single language. Support for multi languages
         # will be implemented in the near future.
-        l_2 = self.find_unique_arxml_child(system_signal, ["DESC", "L-2"])
+        l_2 = self._find_unique_arxml_child(system_signal, ["DESC", "L-2"])
 
         if l_2 is not None:
             return l_2.text
         else:
             return None
 
-    def load_minimum(self, minimum, decimal):
+    def _load_minimum(self, minimum, decimal):
         if minimum is not None:
             decimal.minimum = Decimal(minimum.text)
             minimum = float(decimal.minimum)
 
         return minimum
 
-    def load_maximum(self, maximum, decimal):
+    def _load_maximum(self, maximum, decimal):
         if maximum is not None:
             decimal.maximum = Decimal(maximum.text)
             maximum = float(decimal.maximum)
 
         return maximum
 
-    def load_texttable(self, compu_method, decimal):
+    def _load_texttable(self, compu_method, decimal):
         minimum = None
         maximum = None
         choices = {}
 
-        for compu_scale in self.find_arxml_children(compu_method,
-                                                    [ "&COMPU-INTERNAL-TO-PHYS",
-                                                      "COMPU-SCALES",
-                                                      "*&COMPU-SCALE" ]):
-            lower_limit = self.find_unique_arxml_child(compu_scale, "LOWER-LIMIT")
-            upper_limit = self.find_unique_arxml_child(compu_scale, "UPPER-LIMIT")
-            vt = self.find_unique_arxml_child(compu_scale, [ "&COMPU-CONST", "VT" ])
+        for compu_scale in self._find_arxml_children(compu_method,
+                                                     [ "&COMPU-INTERNAL-TO-PHYS",
+                                                       "COMPU-SCALES",
+                                                       "*&COMPU-SCALE" ]):
+            lower_limit = self._find_unique_arxml_child(compu_scale, "LOWER-LIMIT")
+            upper_limit = self._find_unique_arxml_child(compu_scale, "UPPER-LIMIT")
+            vt = self._find_unique_arxml_child(compu_scale, [ "&COMPU-CONST", "VT" ])
 
             if vt is not None:
                 choices[vt.text] = int(lower_limit.text)
             else:
-                minimum = self.load_minimum(lower_limit, decimal)
-                maximum = self.load_maximum(upper_limit, decimal)
+                minimum = self._load_minimum(lower_limit, decimal)
+                maximum = self._load_maximum(upper_limit, decimal)
 
         return minimum, maximum, choices
 
-    def load_linear_factor_and_offset(self, compu_scale, decimal):
-        compu_rational_coeffs = self.find_unique_arxml_child(compu_scale, "&COMPU-RATIONAL-COEFFS")
+    def _load_linear_factor_and_offset(self, compu_scale, decimal):
+        compu_rational_coeffs = self._find_unique_arxml_child(compu_scale, "&COMPU-RATIONAL-COEFFS")
         if compu_rational_coeffs is None:
             return 1, 0
 
-        numerators = self.find_arxml_children(compu_rational_coeffs, ["&COMPU-NUMERATOR", "*&V"])
+        numerators = self._find_arxml_children(compu_rational_coeffs, ["&COMPU-NUMERATOR", "*&V"])
         if len(numerators) != 2:
             raise ValueError(
                 'Expected 2 numerator values for linear scaling, but '
                 'got {}.'.format(len(numerators)))
 
-        denominators = self.find_arxml_children(compu_rational_coeffs, ["&COMPU-DENOMINATOR", "*&V"])
+        denominators = self._find_arxml_children(compu_rational_coeffs, ["&COMPU-DENOMINATOR", "*&V"])
         if len(denominators) != 1:
             raise ValueError(
                 'Expected 1 denominator value for linear scaling, but '
@@ -336,59 +334,59 @@ class SystemLoader(object):
 
         return float(decimal.scale), float(decimal.offset)
 
-    def load_linear(self, compu_method, decimal):
-        compu_scale = self.find_unique_arxml_child(compu_method,
-                                                   [ "COMPU-INTERNAL-TO-PHYS",
-                                                     "COMPU-SCALES",
-                                                     "&COMPU-SCALE"])
+    def _load_linear(self, compu_method, decimal):
+        compu_scale = self._find_unique_arxml_child(compu_method,
+                                                    [ "COMPU-INTERNAL-TO-PHYS",
+                                                      "COMPU-SCALES",
+                                                      "&COMPU-SCALE"])
 
-        lower_limit = self.find_unique_arxml_child(compu_scale, "&LOWER-LIMIT")
-        upper_limit = self.find_unique_arxml_child(compu_scale, "&UPPER-LIMIT")
+        lower_limit = self._find_unique_arxml_child(compu_scale, "&LOWER-LIMIT")
+        upper_limit = self._find_unique_arxml_child(compu_scale, "&UPPER-LIMIT")
 
-        minimum = self.load_minimum(lower_limit, decimal)
-        maximum = self.load_maximum(upper_limit, decimal)
+        minimum = self._load_minimum(lower_limit, decimal)
+        maximum = self._load_maximum(upper_limit, decimal)
 
-        factor, offset = self.load_linear_factor_and_offset(
+        factor, offset = self._load_linear_factor_and_offset(
             compu_scale,
             decimal)
 
         return minimum, maximum, factor, offset
 
-    def load_scale_linear_and_texttable(self, compu_method, decimal):
+    def _load_scale_linear_and_texttable(self, compu_method, decimal):
         minimum = None
         maximum = None
         factor = 1
         offset = 0
         choices = {}
 
-        for compu_scale in self.find_arxml_children(compu_method,
-                                                    [ "&COMPU-INTERNAL-TO-PHYS",
-                                                      "COMPU-SCALES",
-                                                      "*&COMPU-SCALE" ]):
+        for compu_scale in self._find_arxml_children(compu_method,
+                                                     [ "&COMPU-INTERNAL-TO-PHYS",
+                                                       "COMPU-SCALES",
+                                                       "*&COMPU-SCALE" ]):
 
-            lower_limit = self.find_unique_arxml_child(compu_scale, "LOWER-LIMIT")
-            upper_limit = self.find_unique_arxml_child(compu_scale, "UPPER-LIMIT")
-            vt = self.find_unique_arxml_child(compu_scale, [ "&COMPU-CONST", "VT" ])
+            lower_limit = self._find_unique_arxml_child(compu_scale, "LOWER-LIMIT")
+            upper_limit = self._find_unique_arxml_child(compu_scale, "UPPER-LIMIT")
+            vt = self._find_unique_arxml_child(compu_scale, [ "&COMPU-CONST", "VT" ])
 
             if vt is not None:
                 choices[vt.text] = int(lower_limit.text)
             else:
-                minimum = self.load_minimum(lower_limit, decimal)
-                maximum = self.load_maximum(upper_limit, decimal)
-                factor, offset = self.load_linear_factor_and_offset(
+                minimum = self._load_minimum(lower_limit, decimal)
+                maximum = self._load_maximum(upper_limit, decimal)
+                factor, offset = self._load_linear_factor_and_offset(
                     compu_scale,
                     decimal)
 
         return minimum, maximum, factor, offset, choices
 
-    def load_system_signal(self, system_signal, decimal):
+    def _load_system_signal(self, system_signal, decimal):
         minimum = None
         maximum = None
         factor = 1
         offset = 0
         choices = None
 
-        compu_method = self.find_unique_arxml_child(system_signal,
+        compu_method = self._find_unique_arxml_child(system_signal,
                                                    [ "&PHYSICAL-PROPS",
                                                      "SW-DATA-DEF-PROPS-VARIANTS",
                                                      "&SW-DATA-DEF-PROPS-CONDITIONAL",
@@ -396,7 +394,7 @@ class SystemLoader(object):
 
 
         if compu_method is not None:
-            category = self.find_unique_arxml_child(compu_method, "CATEGORY")
+            category = self._find_unique_arxml_child(compu_method, "CATEGORY")
 
             if category is None:
                 raise ValueError(
@@ -406,33 +404,33 @@ class SystemLoader(object):
             category = category.text
 
             if category == 'TEXTTABLE':
-                minimum, maximum, choices = self.load_texttable(compu_method, decimal)
+                minimum, maximum, choices = self._load_texttable(compu_method, decimal)
             elif category == 'LINEAR':
-                minimum, maximum, factor, offset = self.load_linear(compu_method, decimal)
+                minimum, maximum, factor, offset = self._load_linear(compu_method, decimal)
             elif category == 'SCALE_LINEAR_AND_TEXTTABLE':
                 (minimum,
                  maximum,
                  factor,
                  offset,
-                 choices) = self.load_scale_linear_and_texttable(compu_method, decimal)
+                 choices) = self._load_scale_linear_and_texttable(compu_method, decimal)
             else:
                 LOGGER.debug('Compu method category %s is not yet implemented.', category)
 
         return minimum, maximum, factor, offset, choices
 
 
-    def load_signal_type(self, i_signal):
+    def _load_signal_type(self, i_signal):
         is_signed = False
         is_float = False
 
-        base_type = self.find_unique_arxml_child(i_signal,
-                                                    [ "&NETWORK-REPRESENTATION-PROPS",
-                                                      "SW-DATA-DEF-PROPS-VARIANTS",
-                                                      "&SW-DATA-DEF-PROPS-CONDITIONAL",
-                                                      "&BASE-TYPE" ])
+        base_type = self._find_unique_arxml_child(i_signal,
+                                                  [ "&NETWORK-REPRESENTATION-PROPS",
+                                                    "SW-DATA-DEF-PROPS-VARIANTS",
+                                                    "&SW-DATA-DEF-PROPS-CONDITIONAL",
+                                                    "&BASE-TYPE" ])
 
         if base_type is not None:
-            base_type_encoding = self.find_unique_arxml_child(base_type, "&BASE-TYPE-ENCODING")
+            base_type_encoding = self._find_unique_arxml_child(base_type, "&BASE-TYPE-ENCODING")
             if base_type_encoding is None:
                 raise ValueError(
                     'BASE-TYPE-ENCODING in base type {} does not exist.'.format(
@@ -449,7 +447,7 @@ class SystemLoader(object):
 
     # This method follows an arbitrary relative or absolute ARXML
     # reference to its target node (surprise!)
-    def follow_arxml_reference(self, base_elem, arxml_path, child_tag_name):
+    def _follow_arxml_reference(self, base_elem, arxml_path, child_tag_name):
         """Locate an ElementTree node of a certain kind based on its ARXML path and the element where the path is located.
 
         """
@@ -459,7 +457,7 @@ class SystemLoader(object):
         if is_absolute_path and arxml_path in self._arxml_reference_cache:
             return self._arxml_reference_cache[arxml_path]
 
-        base_elem = self.root if is_absolute_path else base_elem
+        base_elem = self._root if is_absolute_path else base_elem
         if not base_elem:
             raise ValueError(
                 "Tried to dereference a relative ARXML path without a specifying the base location.")
@@ -493,7 +491,7 @@ class SystemLoader(object):
     # preceeded by an '&', ARXML references are allowed and followed,
     # if is prefixed by '*', multiple nodes are possible. These
     # qualifiers can also be combined.
-    def find_arxml_children(self, base_elems, children_location):
+    def _find_arxml_children(self, base_elems, children_location):
         """Locate a set of ElementTree child nodes of a given type.
 
         This is a generator method that follows ARXML references for
@@ -555,7 +553,7 @@ class SystemLoader(object):
                     if child_elem.tag == f"{{{self.xml_namespace}}}{child_tag_name}":
                         local_result.append(child_elem)
                     elif child_elem.tag == f"{{{self.xml_namespace}}}{child_tag_name}-REF":
-                        tmp = self.follow_arxml_reference(base_elem, child_elem.text, child_elem.attrib.get("DEST"))
+                        tmp = self._follow_arxml_reference(base_elem, child_elem.text, child_elem.attrib.get("DEST"))
                         if tmp is None:
                             raise ValueError(f"Encountered dangling reference {child_tag_name}-REF: {child_elem.text}")
 
@@ -573,14 +571,14 @@ class SystemLoader(object):
     # This is a convenience function which is just like
     # `find_arxml_children()` but it expects to match at most one
     # child node, i.e., the returned object can be used directly.
-    def find_unique_arxml_child(self, base_elem, child_location):
+    def _find_unique_arxml_child(self, base_elem, child_location):
         """This  method does the same as find_arxml_children, but it assumes that the location yields at most a single node.
 
 
         It returns None if no match was found and it raises ValueError if multiple nodes match the location.
         """
 
-        tmp = self.find_arxml_children(base_elem, child_location)
+        tmp = self._find_arxml_children(base_elem, child_location)
         if len(tmp) == 0:
             return None
         elif len(tmp) == 1:
