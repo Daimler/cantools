@@ -443,6 +443,7 @@ class SystemLoader(object):
             if base_type_encoding == '2C':
                 is_signed = True
             elif base_type_encoding == 'IEEE754':
+                is_signed = True # all standardized IEEE-754 floating point types are signed
                 is_float = True
 
         return is_signed, is_float
@@ -819,6 +820,7 @@ class EcuExtractLoader(object):
                 if value in ['SINT8', 'SINT16', 'SINT32']:
                     is_signed = True
                 elif value in ['FLOAT32', 'FLOAT64']:
+                    is_signed = True
                     is_float = True
 
         if bit_position is None:
