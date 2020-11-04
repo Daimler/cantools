@@ -141,7 +141,7 @@ def _load_signal_element(signal, nodes):
                   maximum=maximum,
                   unit=unit,
                   choices=labels,
-                  comment=notes,
+                  comments=notes,
                   is_float=is_float,
                   decimal=decimal)
 
@@ -237,7 +237,7 @@ def _load_message_element(message, bus_name, nodes, strict):
                    send_type=None,
                    cycle_time=interval,
                    signals=signals,
-                   comment=notes,
+                   comments=notes,
                    bus_name=bus_name,
                    strict=strict)
 

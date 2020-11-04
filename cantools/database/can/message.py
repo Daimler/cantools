@@ -27,7 +27,7 @@ class Message(object):
                  name,
                  length,
                  signals,
-                 comment=None,
+                 comments=None,
                  senders=None,
                  send_type=None,
                  cycle_time=None,
@@ -55,7 +55,19 @@ class Message(object):
         self._length = length
         self._signals = signals
         self._signals.sort(key=start_bit)
-        self._comment = comment
+
+        # if the 'comments' argument is a string, we assume that is an
+        # english comment. this is slightly hacky because the
+        # function's behavior depends on the type of the passed
+        # argument, but it is quite convenient...
+        self._comments = {}
+        if isinstance(comments, str):
+            # use the first comment in the dictionary as "The" comment
+            self._comments = { "EN": comments }
+        elif comments is not None:
+            # assume that we have a multi-lingual dictionary
+            self._comments = comments
+
         self._senders = senders if senders else []
         self._send_type = send_type
         self._cycle_time = cycle_time
@@ -220,13 +232,28 @@ class Message(object):
     def comment(self):
         """The message comment, or ``None`` if unavailable.
 
+        Note that we implicitly assume the comment's language to be english.
+        
         """
+        if self._comments is None:
+            return None
+        return self._comments.get("EN")
 
-        return self._comment
+    @property
+    def comments(self):
+        """The dictionary with the descriptions of the message in multiple languages. ``None`` if unavailable.
+
+        """
+        return self._comments
 
     @comment.setter
     def comment(self, value):
-        self._comment = value
+        # we implicitly assume english as the language of "the" comment
+        self._comments = { "EN": value }
+
+    @comments.setter
+    def comments(self, value):
+        self._comments = value
 
     @property
     def senders(self):
@@ -910,4 +937,4 @@ class Message(object):
             self._frame_id,
             self._is_extended_frame,
             self._length,
-            "'" + self._comment + "'" if self._comment is not None else None)
+            f"{self._comments}" if self._comments else None)

@@ -129,7 +129,7 @@ class SystemLoader(object):
         length = int(self._find_unique_arxml_child(can_frame, "FRAME-LENGTH").text)
         is_extended_frame = self._find_unique_arxml_child(can_frame_triggering, "CAN-ADDRESSING-MODE")
         is_extended_frame = False if is_extended_frame is None else is_extended_frame.text == "EXTENDED"
-        comment = self._load_message_comment(can_frame)
+        comments = self._load_message_comments(can_frame)
 
         # ToDo: senders
 
@@ -176,19 +176,20 @@ class SystemLoader(object):
                        send_type=None,
                        cycle_time=cycle_time,
                        signals=signals,
-                       comment=comment,
+                       comments=comments,
                        bus_name=None,
                        strict=self._strict)
 
-    def _load_message_comment(self, can_frame):
-        # This extracts a single language. Support for multi languages
-        # will be implemented in the near future.
-        l_2 = self._find_unique_arxml_child(can_frame, ["DESC", "L-2"])
+    def _load_message_comments(self, can_frame):
+        result = {}
 
-        if l_2 is not None:
-            return l_2.text
-        else:
+        for l_2 in self._find_arxml_children(can_frame, ["DESC", "*L-2"]):
+            lang = l_2.attrib.get("L", "EN")
+            result[lang] = l_2.text
+
+        if len(result) == 0:
             return None
+        return result
 
     def _load_signal(self, i_signal_to_i_pdu_mapping):
         """Load given signal and return a signal object.
@@ -202,7 +203,7 @@ class SystemLoader(object):
         offset = 0
         unit = None
         choices = None
-        comment = None
+        comments = None
         receivers = []
         decimal = SignalDecimal(Decimal(factor), Decimal(offset))
 
@@ -221,7 +222,7 @@ class SystemLoader(object):
         if system_signal is not None:
             # Unit and comment.
             unit = self._load_signal_unit(system_signal)
-            comment = self._load_signal_comment(system_signal)
+            comments = self._load_signal_comments(system_signal)
 
             # Minimum, maximum, factor, offset and choices.
             minimum, maximum, factor, offset, choices = \
@@ -244,7 +245,7 @@ class SystemLoader(object):
                       maximum=maximum,
                       unit=unit,
                       choices=choices,
-                      comment=comment,
+                      comments=comments,
                       is_float=is_float,
                       decimal=decimal)
 
@@ -266,15 +267,16 @@ class SystemLoader(object):
 
         return result if result is None else result.text
 
-    def _load_signal_comment(self, system_signal):
-        # This extracts a single language. Support for multi languages
-        # will be implemented in the near future.
-        l_2 = self._find_unique_arxml_child(system_signal, ["DESC", "L-2"])
+    def _load_signal_comments(self, system_signal):
+        result = {}
+        
+        for l_2 in self._find_arxml_children(system_signal, ["DESC", "*L-2"]):
+            lang = l_2.attrib.get("L", "EN")
+            result[lang] = l_2.text
 
-        if l_2 is not None:
-            return l_2.text
-        else:
+        if len(result) == 0:
             return None
+        return result
 
     def _load_minimum(self, minimum, decimal):
         if minimum is not None:
@@ -669,7 +671,7 @@ class EcuExtractLoader(object):
         # Default values.
         interval = None
         senders = []
-        comment = None
+        comments = None
 
         # Name, frame id, length and is_extended_frame.
         name = com_i_pdu.find(SHORT_NAME_XPATH, NAMESPACES).text
@@ -715,7 +717,7 @@ class EcuExtractLoader(object):
 
             return None
 
-        # ToDo: interval, senders, comment
+        # ToDo: interval, senders, comments
 
         # Find all signals in this message.
         signals = []
@@ -743,7 +745,7 @@ class EcuExtractLoader(object):
                        send_type=None,
                        cycle_time=interval,
                        signals=signals,
-                       comment=comment,
+                       comments=comments,
                        bus_name=None,
                        strict=self.strict)
 
@@ -797,7 +799,7 @@ class EcuExtractLoader(object):
         offset = 0
         unit = None
         choices = None
-        comment = None
+        comments = None
         receivers = []
         decimal = SignalDecimal(Decimal(factor), Decimal(offset))
 
@@ -835,7 +837,7 @@ class EcuExtractLoader(object):
             return None
 
         # ToDo: minimum, maximum, factor, offset, unit, choices,
-        #       comment and receivers.
+        #       comments and receivers.
 
         return Signal(name=name,
                       start=bit_position,
@@ -849,7 +851,7 @@ class EcuExtractLoader(object):
                       maximum=maximum,
                       unit=unit,
                       choices=choices,
-                      comment=comment,
+                      comments=comments,
                       is_float=is_float,
                       decimal=decimal)
 

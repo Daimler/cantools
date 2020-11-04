@@ -118,7 +118,7 @@ class Signal(object):
                  unit=None,
                  choices=None,
                  dbc_specifics=None,
-                 comment=None,
+                 comments=None,
                  receivers=None,
                  is_multiplexer=False,
                  multiplexer_ids=None,
@@ -140,7 +140,19 @@ class Signal(object):
         self._unit = unit
         self._choices = choices
         self._dbc = dbc_specifics
-        self._comment = comment
+
+        # if the 'comments' argument is a string, we assume that is an
+        # english comment. this is slightly hacky because the
+        # function's behavior depends on the type of the passed
+        # argument, but it is quite convenient...
+        self._comments = {}
+        if isinstance(comments, str):
+            # use the first comment in the dictionary as "The" comment
+            self._comments = { "EN": comments }
+        elif comments is not None:
+            # assume that we have a multi-lingual dictionary
+            self._comments = comments
+
         self._receivers = [] if receivers is None else receivers
         self._is_multiplexer = is_multiplexer
         self._multiplexer_ids = multiplexer_ids
@@ -334,13 +346,28 @@ class Signal(object):
     def comment(self):
         """The signal comment, or ``None`` if unavailable.
 
+        Note that we implicitly assume the comment's language to be english.
+        
         """
+        if self._comments is None:
+            return None
+        return self._comments.get("EN")
 
-        return self._comment
+    @property
+    def comments(self):
+        """The dictionary with the descriptions of the signal in multiple languages. ``None`` if unavailable.
+
+        """
+        return self._comments
 
     @comment.setter
     def comment(self, value):
-        self._comment = value
+        # we implicitly assume english as the language of "the" comment
+        self._comments = { "EN": value }
+
+    @comments.setter
+    def comments(self, value):
+        self._comments = value
 
     @property
     def receivers(self):
@@ -431,4 +458,4 @@ class Signal(object):
             self._multiplexer_ids,
             choices,
             self._spn,
-            "'" + self._comment + "'" if self._comment is not None else None)
+            f"{self._comments}" if self._comments else None)
