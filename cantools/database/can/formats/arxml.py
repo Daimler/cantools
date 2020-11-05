@@ -195,7 +195,6 @@ class SystemLoader(object):
         """Load given signal and return a signal object.
 
         """
-
         i_signal = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "&I-SIGNAL")
         if i_signal is None:
             # No I-SIGNAL found, i.e. this i-signal-to-i-pdu-mapping is
@@ -211,6 +210,7 @@ class SystemLoader(object):
             return None
 
         # Default values.
+        initial = None
         minimum = None
         maximum = None
         factor = 1
@@ -246,6 +246,21 @@ class SystemLoader(object):
         # Type.
         is_signed, is_float = self._load_signal_type(i_signal)
 
+        # loading constants is way too complicated, so it it is the job of a separate method
+        initial = self._load_arxml_const_value(i_signal, "INIT-VALUE")
+        if initial is None:
+            initial = self._load_arxml_const_value(system_signal, "INIT-VALUE")
+
+        if initial is not None:
+            if is_float:
+                initial = float(initial)
+            elif initial.strip().lower() == "true":
+                initial = True
+            elif initial.strip().lower() == "false":
+                initial = False
+            else:
+                initial = int(initial)
+
         # ToDo: receivers
 
         return Signal(name=name,
@@ -256,6 +271,7 @@ class SystemLoader(object):
                       is_signed=is_signed,
                       scale=factor,
                       offset=offset,
+                      initial=initial,
                       minimum=minimum,
                       maximum=maximum,
                       unit=unit,
@@ -263,6 +279,32 @@ class SystemLoader(object):
                       comments=comments,
                       is_float=is_float,
                       decimal=decimal)
+
+    def _load_arxml_const_value(self, base_elem, const_name):
+        """"Load a constant value
+
+        For whatever reason, references to constants do not use the same
+        scheme as everything else.
+        """
+
+        if base_elem is None:
+            return None
+
+        literal_spec = base_elem.find(f"./ns:{const_name}", self._xml_namespaces)
+        if literal_spec is None:
+            # try to follow a reference to a constant
+            literal_spec_ref = base_elem.find(f"./ns:{const_name}-REF", self._xml_namespaces)
+
+            if literal_spec_ref is None:
+                return None
+
+            literal_spec = self._follow_arxml_const_reference(base_elem, literal_spec_ref.text, literal_spec_ref.attrib.get("DEST", ""))
+
+        if literal_spec is None:
+            return None
+
+        literal_value = literal_spec.find(f"./ns:VALUE", self._xml_namespaces)
+        return None if literal_value is None else literal_value.text
 
     def _load_signal_byte_order(self, i_signal_to_i_pdu_mapping):
         packing_byte_order = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "PACKING-BYTE-ORDER")
@@ -433,7 +475,7 @@ class SystemLoader(object):
             else:
                 LOGGER.debug('Compu method category %s is not yet implemented.', category)
 
-        return minimum, maximum, factor, offset, choices
+        return minimum, maximum, 1 if factor is None else factor, 0 if offset is None else offset, choices
 
 
     def _load_signal_type(self, i_signal):
@@ -481,8 +523,10 @@ class SystemLoader(object):
         is_absolute_path = arxml_path.startswith("/")
 
         if is_absolute_path and arxml_path in self._arxml_reference_cache:
+            # absolute paths are globally unique and thus can be cached
             return self._arxml_reference_cache[arxml_path]
 
+        # TODO (?): for relative paths, we need to find the corresponding package tag for each base element!
         base_elem = self._root if is_absolute_path else base_elem
         if not base_elem:
             raise ValueError(
@@ -509,6 +553,25 @@ class SystemLoader(object):
             self._arxml_reference_cache[arxml_path] = result
 
         return result
+
+    def _follow_arxml_const_reference(self, base_elem, arxml_const_path, child_tag_name):
+        """This method is does the same as _follow_arxml_ref() but for constant specifications.
+
+        """
+
+        arxml_const_path_tuple = arxml_const_path.split("/")
+
+        c_spec = self._follow_arxml_reference(base_elem, "/".join(arxml_const_path_tuple[:-1]), "CONSTANT-SPECIFICATION")
+        if c_spec is None:
+            raise ValueError(f"No constant specification found for constant {arxml_const_path}")
+
+        val_node = c_spec.find("./ns:VALUE", self._xml_namespaces)
+        if val_node is None:
+            raise ValueError(f"Constant specification of constant {arxml_const_path} does not exhibit a VALUE sub-tag")
+
+        literal = val_node.find(f"./ns:{child_tag_name}/[ns:SHORT-NAME='{arxml_const_path_tuple[-1]}']", self._xml_namespaces)
+        return literal
+
 
     # This method returns a given set of elements' list of child nodes
     # that match a ARXML location specification. A location
