@@ -27,8 +27,11 @@ class SystemLoader(object):
         self.xml_namespace = xml_namespace
         self._xml_namespaces = { "ns": xml_namespace }
 
-        if m := re.match("^http://autosar\.org/schema/r(4\..*)$", xml_namespace):
+        if m := re.match("^http://autosar\.org/schema/r(4\.[0-9.]*)$", xml_namespace):
             # AUTOSAR 4
+            autosar_version_string = m.group(1)
+        elif m := re.match("^http://autosar\.org/(3\.[0-9.]*)$", xml_namespace):
+            # AUTOSAR 3
             autosar_version_string = m.group(1)
         else:
             raise ValueError(f"Unrecognized AUTOSAR XML namespace '{xml_namespace}'")
@@ -92,18 +95,35 @@ class SystemLoader(object):
         # This code inspects the top level packages. Packages in
         # sub-packages are not treated yet.  This might or might not
         # be necessary.
+        if self.autosar_version_newer(4):
+            frame_triggerings_spec = \
+                [ "AR-PACKAGES",
+                  "*AR-PACKAGE",
+                  "ELEMENTS",
+                  "*&CAN-CLUSTER",
+                  "CAN-CLUSTER-VARIANTS",
+                  "*&CAN-CLUSTER-CONDITIONAL",
+                  "PHYSICAL-CHANNELS",
+                  "*&CAN-PHYSICAL-CHANNEL",
+                  "FRAME-TRIGGERINGS",
+                  "*&CAN-FRAME-TRIGGERING" ]
+        else: # AUTOSAR 3
+            frame_triggerings_spec = \
+                [ "TOP-LEVEL-PACKAGES",
+                  "*AR-PACKAGE",
+                  "ELEMENTS",
+                  "*&CAN-CLUSTER",
+                  "PHYSICAL-CHANNELS",
+                  "*&PHYSICAL-CHANNEL",
+
+                  # ATTENTION! The trailig 'S' here is in purpose: It
+                  # appears in the AUTOSAR 3.2 XSD, but it still seems
+                  # to be a typo in the spec...
+                  "FRAME-TRIGGERINGSS",
+
+                  "*&CAN-FRAME-TRIGGERING" ]
         can_frame_triggerings = \
-            self._find_arxml_children(self._root,
-                                      [ "AR-PACKAGES",
-                                        "*AR-PACKAGE",
-                                        "ELEMENTS",
-                                        "*&CAN-CLUSTER",
-                                        "CAN-CLUSTER-VARIANTS",
-                                        "*&CAN-CLUSTER-CONDITIONAL",
-                                        "PHYSICAL-CHANNELS",
-                                        "*&CAN-PHYSICAL-CHANNEL",
-                                        "FRAME-TRIGGERINGS",
-                                        "*&CAN-FRAME-TRIGGERING" ])
+            self._find_arxml_children(self._root, frame_triggerings_spec)
         for can_frame_triggering in can_frame_triggerings:
             messages.append(self._load_message(can_frame_triggering))
 
@@ -145,21 +165,27 @@ class SystemLoader(object):
                                               "&PDU" ])
 
         if pdu is not None:
-            time_period = self._find_unique_arxml_child(pdu,
-                                                        [ "I-PDU-TIMING-SPECIFICATIONS",
-                                                          "I-PDU-TIMING",
-                                                          "TRANSMISSION-MODE-DECLARATION",
-                                                          "TRANSMISSION-MODE-TRUE-TIMING",
-                                                          "CYCLIC-TIMING",
-                                                          "TIME-PERIOD",
-                                                          "VALUE" ])
+            if self.autosar_version_newer(4):
+                time_period_location = [ "I-PDU-TIMING-SPECIFICATIONS",
+                                         "I-PDU-TIMING",
+                                         "TRANSMISSION-MODE-DECLARATION",
+                                         "TRANSMISSION-MODE-TRUE-TIMING",
+                                         "CYCLIC-TIMING",
+                                         "TIME-PERIOD",
+                                         "VALUE" ]
+            else:
+                time_period_location = [ "I-PDU-TIMING-SPECIFICATION",
+                                         "CYCLIC-TIMING",
+                                         "REPEATING-TIME",
+                                         "VALUE" ]
+            time_period = self._find_unique_arxml_child(pdu, time_period_location)
 
             if time_period is not None:
                 cycle_time = int(float(time_period.text) * 1000)
 
             i_signal_to_i_pdu_mappings = \
                 self._find_arxml_children(pdu,
-                                          [ "I-SIGNAL-TO-PDU-MAPPINGS",
+                                          [ "I-SIGNAL-TO-PDU-MAPPINGS" if self.autosar_version_newer(4) else "SIGNAL-TO-PDU-MAPPINGS",
                                             "*&I-SIGNAL-TO-I-PDU-MAPPING" ])
 
             for i_signal_to_i_pdu_mapping in i_signal_to_i_pdu_mappings:
@@ -195,7 +221,7 @@ class SystemLoader(object):
         """Load given signal and return a signal object.
 
         """
-        i_signal = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "&I-SIGNAL")
+        i_signal = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "&I-SIGNAL" if self.autosar_version_newer(4) else "&SIGNAL")
         if i_signal is None:
             # No I-SIGNAL found, i.e. this i-signal-to-i-pdu-mapping is
             # probably a i-signal group. According to the XSD, I-SIGNAL and
@@ -221,6 +247,8 @@ class SystemLoader(object):
         receivers = []
         decimal = SignalDecimal(Decimal(factor), Decimal(offset))
 
+        i_signal = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping,
+                                                 "&I-SIGNAL" if self.autosar_version_newer(4) else "&SIGNAL")
         # Name, start position, length and byte order.
         name = self._find_unique_arxml_child(i_signal, "SHORT-NAME").text
         start_position = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "START-POSITION")
@@ -343,7 +371,7 @@ class SystemLoader(object):
         text_to_num_fn = float if is_float else int
 
         for compu_scale in self._find_arxml_children(compu_method,
-                                                     [ "&COMPU-INTERNAL-TO-PHYS",
+                                                     [ "COMPU-INTERNAL-TO-PHYS",
                                                        "COMPU-SCALES",
                                                        "*&COMPU-SCALE" ]):
             lower_limit = self._find_unique_arxml_child(compu_scale, "LOWER-LIMIT")
@@ -454,12 +482,16 @@ class SystemLoader(object):
         offset = 0
         choices = None
 
-        compu_method = self._find_unique_arxml_child(system_signal,
-                                                   [ "&PHYSICAL-PROPS",
-                                                     "SW-DATA-DEF-PROPS-VARIANTS",
-                                                     "&SW-DATA-DEF-PROPS-CONDITIONAL",
-                                                     "&COMPU-METHOD" ])
-
+        if self.autosar_version_newer(4):
+            compu_method_location = [ "&PHYSICAL-PROPS",
+                                      "SW-DATA-DEF-PROPS-VARIANTS",
+                                      "&SW-DATA-DEF-PROPS-CONDITIONAL",
+                                      "&COMPU-METHOD" ]
+        else:
+            compu_method_location = [ "&DATA-TYPE",
+                                      "SW-DATA-DEF-PROPS",
+                                      "&COMPU-METHOD" ]
+        compu_method = self._find_unique_arxml_child(system_signal, compu_method_location)
 
         if compu_method is not None:
             category = self._find_unique_arxml_child(compu_method, "CATEGORY")
@@ -543,17 +575,34 @@ class SystemLoader(object):
         short_names = arxml_path.lstrip("/").split("/")
         location = []
 
-        for short_name in short_names[:-1]:
-            location += [
-                "AR-PACKAGES",
-                "AR-PACKAGE/[ns:SHORT-NAME='{}']".format(short_name)
-            ]
+        # in AUTOSAR3, the top level packages are located beneath the
+        # TOP-LEVEL-PACKAGES tag, and sub-packages use
+        # SUB-PACKAGES. AUTOSAR 4 always uses AR-PACKAGES.
+        if self.autosar_version_newer(4):
+            for atom in short_names[:-1]:
+                location += [
+                    "AR-PACKAGES",
+                    "AR-PACKAGE/[ns:SHORT-NAME='{}']".format(atom)
+                ]
 
-        location += [
-            "ELEMENTS",
-            "{}/[ns:SHORT-NAME='{}']".format(child_tag_name,
-                                             short_names[-1])
-        ]
+            location += [
+                "ELEMENTS",
+                "{}/[ns:SHORT-NAME='{}']".format(child_tag_name,
+                                                 short_names[-1]) ]
+        else:
+            location = [
+                "TOP-LEVEL-PACKAGES",
+                "AR-PACKAGE/[ns:SHORT-NAME='{}']".format(short_names[0]) ]
+
+            for atom in short_names[1:-1]:
+                location += [
+                    "SUB-PACKAGES",
+                    "AR-PACKAGE/[ns:SHORT-NAME='{}']".format(atom),
+                ]
+
+            location += [
+                "ELEMENTS",
+                "{}/[ns:SHORT-NAME='{}']".format(child_tag_name, short_names[-1]) ]
 
         result = base_elem.find(make_xpath(location), self._xml_namespaces)
 
@@ -1059,7 +1108,8 @@ def load_string(string, strict=True):
 
     # Should be replaced with a validation using the XSD file.
     recognized_namespace = False
-    if re.match("http://autosar.org/schema/r(.*)", xml_namespace):
+    if re.match("http://autosar.org/schema/r(4.*)", xml_namespace) \
+       or re.match("http://autosar.org/(3.*)", xml_namespace):
         recognized_namespace = True
 
     if not recognized_namespace:
