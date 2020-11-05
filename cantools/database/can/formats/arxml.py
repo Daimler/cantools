@@ -196,6 +196,20 @@ class SystemLoader(object):
 
         """
 
+        i_signal = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "&I-SIGNAL")
+        if i_signal is None:
+            # No I-SIGNAL found, i.e. this i-signal-to-i-pdu-mapping is
+            # probably a i-signal group. According to the XSD, I-SIGNAL and
+            # I-SIGNAL-GROUP-REF are mutually exclusive...
+            return None
+
+        # get the system signal XML node. this may also be a system signal
+        # group, in which case we have ignore it if the XSD is to be believed.
+        # ARXML is great!
+        system_signal = self._find_unique_arxml_child(i_signal, "&SYSTEM-SIGNAL")
+        if system_signal is not None and system_signal.tag != f"{{{self.xml_namespace}}}SYSTEM-SIGNAL":
+            return None
+
         # Default values.
         minimum = None
         maximum = None
@@ -207,18 +221,19 @@ class SystemLoader(object):
         receivers = []
         decimal = SignalDecimal(Decimal(factor), Decimal(offset))
 
-        i_signal = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "&I-SIGNAL")
-        if i_signal is None:
-            # Probably a signal group (I-SIGNAL-GROUP).
-            return None
-
         # Name, start position, length and byte order.
         name = self._find_unique_arxml_child(i_signal, "SHORT-NAME").text
-        start_position = int(self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "START-POSITION").text)
-        length = int(self._find_unique_arxml_child(i_signal, "LENGTH").text)
+        start_position = self._find_unique_arxml_child(i_signal_to_i_pdu_mapping, "START-POSITION")
+        start_position = int(start_position.text) if start_position is not None else default_start_position
+
+        length = self._find_unique_arxml_child(i_signal, "LENGTH")
+        if length is None and system_signal is not None:
+            # get the length from the system signal.
+            length = self._find_unique_arxml_child(system_signal, "LENGTH")
+        length = 0 if length is None else int(length.text)
+
         byte_order = self._load_signal_byte_order(i_signal_to_i_pdu_mapping)
 
-        system_signal = self._find_unique_arxml_child(i_signal, "&SYSTEM-SIGNAL")
         if system_signal is not None:
             # Unit and comment.
             unit = self._load_signal_unit(system_signal)
