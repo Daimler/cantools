@@ -153,6 +153,7 @@ class SystemLoader(object):
         self._system_signal_cache = {}
         self._compu_method_cache = {}
         self._sw_base_type_cache = {}
+        self._arxml_reference_cache = {}
 
     def load(self):
         buses = []
@@ -548,6 +549,147 @@ class SystemLoader(object):
         ]
 
         return self.root.find(make_xpath(location), NAMESPACES)
+
+    # This method follows an arbitrary relative or absolute ARXML
+    # reference to its target node (surprise!)
+    def follow_arxml_reference(self, base_elem, arxml_path, child_tag_name):
+        """Locate an ElementTree node of a certain kind based on its ARXML path and the element where the path is located.
+
+        """
+
+        is_absolute_path = arxml_path.startswith("/")
+
+        if is_absolute_path and arxml_path in self._arxml_reference_cache:
+            return self._arxml_reference_cache[arxml_path]
+
+        base_elem = self.root if is_absolute_path else base_elem
+        if not base_elem:
+            raise ValueError(
+                "Tried to dereference a relative ARXML path without a specifying the base location.")
+
+        short_names = arxml_path.lstrip("/").split("/")
+        location = []
+
+        for short_name in short_names[:-1]:
+            location += [
+                "AR-PACKAGES",
+                "AR-PACKAGE/[ns:SHORT-NAME='{}']".format(short_name)
+            ]
+
+        location += [
+            "ELEMENTS",
+            "{}/[ns:SHORT-NAME='{}']".format(child_tag_name,
+                                             short_names[-1])
+        ]
+
+        result = base_elem.find(make_xpath(location), NAMESPACES)
+
+        if is_absolute_path:
+            self._arxml_reference_cache[arxml_path] = result
+
+        return result
+
+    # This method returns a given set of elements' list of child nodes
+    # that match a ARXML location specification. A location
+    # specifcation is a sequence of strings (called atoms here) of XML
+    # tag names that ought to be traversed. If a such location atom is
+    # preceeded by an '&', ARXML references are allowed and followed,
+    # if is prefixed by '*', multiple nodes are possible. These
+    # qualifiers can also be combined.
+    def find_arxml_children(self, base_elems, children_location):
+        """Locate a set of ElementTree child nodes of a given type.
+
+        This is a generator method that follows ARXML references for
+        entries which are preceeded by an "&" if there is a sub-node
+        called "{child_tag_name}-REF" in the ElementTree.
+
+        If the child name is preceeded by a *, then multiple
+        sub-elements are possible.
+
+        Example:
+
+        # return all frame triggernngs in any physical channel of a
+        # CAN cluster, where each conditional, each the physical
+        # channel and its individual frame triggerings can be
+        # references
+        loader.find_arxml_children(can_cluster,
+                                   [ "CAN-CLUSTER-VARIANTS",
+                                     "*&CAN-CLUSTER-CONDITIONAL",
+                                     "PHYSICAL-CHANNELS",
+                                     "*&CAN-PHYSICAL-CHANNEL",
+                                     "FRAME-TRIGGERINGS",
+                                     "*&CAN-FRAME-TRIGGERING"])
+        """
+
+        if base_elems is None:
+            raise ValueError("Cannot retrieve a child element of a non-existing node!")
+
+        # make sure that the children_location is a list. for convenience we
+        # also allow it to be a string. In this case we take it that a
+        # direct child node needs to be found.
+        if isinstance(children_location, str):
+            children_location = [ children_location ]
+
+        # make sure that the base elements are iterable. for
+        # convenience we also allow it to be an individiual node.
+        if type(base_elems).__name__ == "Element":
+            base_elems = [base_elems]
+
+        for child_tag_name in children_location:
+            if len(base_elems) == 0:
+                return [] # the base elements left are the empty set...
+
+            # handle the set and reference specifiers of the current
+            # sub-location
+            allow_references = "&" in child_tag_name[:2]
+            is_nodeset = "*" in child_tag_name[:2]
+
+            if allow_references:
+                child_tag_name = child_tag_name[1:]
+            if is_nodeset:
+                child_tag_name = child_tag_name[1:]
+
+            # traverse the specified path one level deeper
+            result = []
+            for base_elem in base_elems:
+                local_result = []
+
+                for child_elem in base_elem:
+                    if child_elem.tag == f"{{{NAMESPACE}}}{child_tag_name}":
+                        local_result.append(child_elem)
+                    elif child_elem.tag == f"{{{NAMESPACE}}}{child_tag_name}-REF":
+                        tmp = self._follow_arxml_reference(base_elem, child_elem.text, child_elem.attrib.get("DEST"))
+                        if tmp is None:
+                            raise ValueError(f"Encountered dangling reference {child_tag_name}-REF: {child_elem.text}")
+
+                        local_result.append(tmp)
+
+                if not is_nodeset and len(local_result) > 1:
+                    raise ValueError(f"Encountered a a non-unique child node of type {child_tag_name} which ought to be unique")
+                    
+                result.extend(local_result)
+
+            base_elems = result
+
+        return base_elems
+
+    # This is a convenience function which is just like
+    # `find_arxml_children()` but it expects to match at most one
+    # child node, i.e., the returned object can be used directly.
+    def find_unique_arxml_child(self, base_elem, child_location):
+        """This  method does the same as find_arxml_children, but it assumes that the location yields at most a single node.
+
+
+        It returns None if no match was found and it raises ValueError if multiple nodes match the location.
+        """
+
+        tmp = self.find_arxml_children(base_elem, child_location)
+        if len(tmp) == 0:
+            return None
+        elif len(tmp) == 1:
+            return tmp[0]
+        else:
+            raise ValueError(f"{child_location} does not resolve into a unique node")
 
     def find_can_frame(self, xpath):
         return self.find('CAN-FRAME', xpath)
